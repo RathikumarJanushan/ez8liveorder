@@ -8,12 +8,15 @@ class BillOrder {
   final String status;
   final DateTime timestamp; // Order creation time
   final DateTime? acceptTime; // New field for accept time
+  final DateTime? deliveryTime; // New field for accept time
   final ShippingAddress shippingAddress;
   final List<CartItem> cartItems;
   final double total;
   final String paymentMethod;
   final String hotelName;
   final String? hotelIdRef; // Reference to hotel ID if needed
+  final String? hotelAddress;
+
 
   BillOrder({
     required this.documentId,
@@ -21,12 +24,14 @@ class BillOrder {
     required this.status,
     required this.timestamp,
     this.acceptTime, // Initialize the new field
+    this.deliveryTime, // Initialize the new field
     required this.shippingAddress,
     required this.cartItems,
     required this.total,
     required this.paymentMethod,
     required this.hotelName,
     this.hotelIdRef,
+    this.hotelAddress
   });
 
   factory BillOrder.fromMap(String documentId, Map<String, dynamic> data) {
@@ -38,6 +43,9 @@ class BillOrder {
       acceptTime: data['Accept_time'] != null
           ? (data['Accept_time'] as Timestamp).toDate()
           : null, // Parse Accept_time if available
+           deliveryTime: data['delivery_time'] != null
+          ? (data['delivery_time'] as Timestamp).toDate()
+          : null, // Parse Accept_time if available
       shippingAddress: ShippingAddress.fromMap(data['shippingAddress']),
       cartItems: (data['cartItems'] as List<dynamic>)
           .map((item) => CartItem.fromMap(item))
@@ -46,6 +54,7 @@ class BillOrder {
       paymentMethod: data['paymentMethod'] ?? 'Unknown',
       hotelName: data['hotelName'] ?? 'Unknown',
       hotelIdRef: data['hotelIdRef'],
+      hotelAddress: data['address'],
     );
   }
 

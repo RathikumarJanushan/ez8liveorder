@@ -72,6 +72,29 @@ class _BillOrdersWidgetState extends State<BillOrdersWidget> {
     }
     return grouped;
   }
+Future<String> _getHotelAddress(String hotelId) async {
+  final doc = await FirebaseFirestore.instance.collection('hotels').doc(hotelId).get();
+  if (doc.exists) {
+    final data = doc.data();
+    return data?['address'] ?? '';
+  }
+  return '';
+}
+
+Widget _buildHotelAddress(String hotelId) {
+  return FutureBuilder<String>(
+    future: _getHotelAddress(hotelId),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const CircularProgressIndicator();
+      }
+      if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+        return const Text('No address available', style: TextStyle(fontSize: 14));
+      }
+      return Text('Hotel Address: ${snapshot.data!}', style: const TextStyle(fontSize: 14));
+    },
+  );
+}
 
   /// Play a sound when new orders arrive.
   Future<void> _playSound() async {
@@ -291,226 +314,237 @@ class _BillOrdersWidgetState extends State<BillOrdersWidget> {
   //----------------------------------------------------------------------------
   //  SHOW ORDER DETAILS DIALOG (with Auto Print switch)
   //----------------------------------------------------------------------------
-  void _showOrderDetailsDialog(BillOrder order) {
-    // Initialize with DateTime.now() + 60 minutes
-    DateTime computedDeliveryTime =
-        DateTime.now().add(const Duration(minutes: 60));
+ void _showOrderDetailsDialog(BillOrder order) {
+  // Initialize with DateTime.now() + 60 minutes
+  DateTime computedDeliveryTime =
+      DateTime.now().add(const Duration(minutes: 60));
 
-    // For capturing the user’s input for how many minutes to add
-    final TextEditingController deliveryController =
-        TextEditingController(text: "60");
+  // For capturing the user’s input for how many minutes to add
+  final TextEditingController deliveryController =
+      TextEditingController(text: "60");
 
-    // Auto-print toggle
-    bool isAutoPrintOn = false;
+  // Auto-print toggle
+  bool isAutoPrintOn = false;
 
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (BuildContext context, setState) {
-            return AlertDialog(
-              title: Text('Order ID: ${order.documentId}'),
-              content: SingleChildScrollView(
-                child: SizedBox(
-                  width: double.maxFinite,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Timestamps
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          // Show the original order timestamp
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Order Placed: ${DateFormat("yyyy-MM-dd HH:mm").format(order.timestamp)}',
-                                style: const TextStyle(
-                                    fontSize: 14, color: Colors.grey),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Delivery Time: ${DateFormat("yyyy-MM-dd HH:mm").format(computedDeliveryTime)}',
-                                style: const TextStyle(
-                                    fontSize: 14, color: Colors.grey),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
+  // Determine if the order is pending
+  bool isPending = order.status.toLowerCase() == 'pending';
 
-                      // Let user specify how many minutes from "now"
-                      const Text('Enter Delivery Minutes:',
-                          style: TextStyle(fontSize: 14)),
-                      TextField(
-                        controller: deliveryController,
-                        keyboardType: TextInputType.number,
-                        onChanged: (value) {
-                          final mins = int.tryParse(value) ?? 60;
-                          setState(() {
-                            // Always base on current time, not order.timestamp
-                            computedDeliveryTime =
-                                DateTime.now().add(Duration(minutes: mins));
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Basic Order details
-                      Text('Hotel Name: ${order.hotelName}',
-                          style: const TextStyle(fontSize: 16)),
-                      const SizedBox(height: 8),
-                      Text('Customer: ${order.shippingAddress.name}',
-                          style: const TextStyle(fontSize: 16)),
-                      const SizedBox(height: 8),
-                      const Text('Shipping Address:',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      Text(order.shippingAddress.address,
-                          style: const TextStyle(fontSize: 14)),
-                      Text(order.shippingAddress.country,
-                          style: const TextStyle(fontSize: 14)),
-                      Text('Mobile: ${order.shippingAddress.mobile}',
-                          style: const TextStyle(fontSize: 14)),
-
-                      const Divider(height: 20),
-
-                      // Cart items
-                      const Text('Cart Items:',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      ...order.cartItems.map(
-                        (item) => ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.fastfood,
-                              color: Colors.orange, size: 20),
-                          title: Text(item.dishName,
-                              style: const TextStyle(fontSize: 14)),
-                          subtitle: Text('Quantity: ${item.quantity}',
-                              style: const TextStyle(fontSize: 12)),
-                          trailing: Text(
-                            'CHF ${item.price.toStringAsFixed(2)}',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        ),
-                      ),
-
-                      const Divider(height: 20),
-
-                      Text('Total: CHF ${order.total.toStringAsFixed(2)}',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Text('Payment Method: ${order.paymentMethod}',
-                          style: const TextStyle(fontSize: 14)),
-
-                      const Divider(height: 20),
-
-                      // QR Code
-                      const Text('Scan Order ID:',
-                          style: TextStyle(fontWeight: FontWeight.bold)),
-                      const SizedBox(height: 8),
-                      Center(
-                        child: QrImageView(
-                          data: order.documentId,
-                          version: QrVersions.auto,
-                          size: 100,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    builder: (BuildContext context) {
+      return StatefulBuilder(
+        builder: (BuildContext context, setState) {
+          return AlertDialog(
+            title: Text('Order ID: ${order.documentId}'),
+            content: SingleChildScrollView(
+              child: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text('Auto Print', style: TextStyle(fontSize: 14)),
-                    Switch(
-                      value: isAutoPrintOn,
-                      onChanged: (val) {
+                    // Timestamps
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        // Show the original order timestamp and computed delivery time
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Order Placed: ${DateFormat("yyyy-MM-dd HH:mm").format(order.timestamp)}',
+                              style: const TextStyle(
+                                  fontSize: 14, color: Colors.grey),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Delivery Time: ${DateFormat("yyyy-MM-dd HH:mm").format(computedDeliveryTime)}',
+                              style: const TextStyle(
+                                  fontSize: 14, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Let user specify how many minutes from "now"
+                    const Text('Enter Delivery Minutes:',
+                        style: TextStyle(fontSize: 14)),
+                    TextField(
+                      controller: deliveryController,
+                      keyboardType: TextInputType.number,
+                      enabled: isPending, // enable only if pending
+                      onChanged: (value) {
+                        final mins = int.tryParse(value) ?? 60;
                         setState(() {
-                          isAutoPrintOn = val;
+                          // Always base on current time, not order.timestamp
+                          computedDeliveryTime =
+                              DateTime.now().add(Duration(minutes: mins));
                         });
                       },
                     ),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Close'),
+                    const SizedBox(height: 16),
+
+                    // Basic Order details
+                    Text('Hotel Name: ${order.hotelName}',
+                        style: const TextStyle(fontSize: 16)),
+            // Fetch and display hotel address using the hotelId
+_buildHotelAddress(order.hotelId),
+const SizedBox(height: 8),
+                    Text('Customer: ${order.shippingAddress.name}',
+                        style: const TextStyle(fontSize: 16)),
+                    const SizedBox(height: 8),
+                    const Text('Shipping Address:',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    Text(order.shippingAddress.address,
+                        style: const TextStyle(fontSize: 14)),
+                    Text(order.shippingAddress.country,
+                        style: const TextStyle(fontSize: 14)),
+                    Text('Mobile: ${order.shippingAddress.mobile}',
+                        style: const TextStyle(fontSize: 14)),
+
+                    const Divider(height: 20),
+
+                    // Cart items
+                    const Text('Cart Items:',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    ...order.cartItems.map(
+                      (item) => ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.fastfood,
+                            color: Colors.orange, size: 20),
+                        title: Text(item.dishName,
+                            style: const TextStyle(fontSize: 14)),
+                        subtitle: Text('Quantity: ${item.quantity}',
+                            style: const TextStyle(fontSize: 12)),
+                        trailing: Text(
+                          'CHF ${item.price.toStringAsFixed(2)}',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
                     ),
-                    ElevatedButton(
-                      onPressed: () async {
-                        final mins =
-                            int.tryParse(deliveryController.text) ?? 60;
-                        // Calculate final delivery time from NOW
-                        final newDeliveryTime =
-                            DateTime.now().add(Duration(minutes: mins));
 
-                        try {
-                          // Update Firestore with the new delivery time
-                          await FirebaseFirestore.instance
-                              .collection('BillOrder')
-                              .doc(order.documentId)
-                              .update({
-                            'delivery_time': newDeliveryTime,
-                          });
+                    const Divider(height: 20),
 
-                          // Build the custom PDF for printing (2-inch wide)
-                          final pdfBytes =
-                              await _buildPdf(order, newDeliveryTime);
+                    Text('Total: CHF ${order.total.toStringAsFixed(2)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Text('Payment Method: ${order.paymentMethod}',
+                        style: const TextStyle(fontSize: 14)),
 
-                          if (isAutoPrintOn) {
-                            // Let user pick a printer, then direct print
-                            final printer =
-                                await Printing.pickPrinter(context: context);
-                            if (printer == null) return; // user canceled
-                            await Printing.directPrintPdf(
-                              printer: printer,
-                              name: 'Order_${order.documentId}',
-                              format: PdfPageFormat(
-                                2 * PdfPageFormat.inch,
-                                700, // same as in _buildPdf
-                                marginAll: 5,
-                              ),
-                              onLayout: (PdfPageFormat format) async =>
-                                  pdfBytes,
-                            );
-                          } else {
-                            // Show the print preview => user can also save as PDF
-                            await Printing.layoutPdf(
-                              name: 'Order_${order.documentId}',
-                              format: PdfPageFormat(
-                                2 * PdfPageFormat.inch,
-                                700,
-                                marginAll: 5,
-                              ),
-                              onLayout: (PdfPageFormat format) async =>
-                                  pdfBytes,
-                            );
-                          }
+                    const Divider(height: 20),
 
-                          Navigator.of(context).pop();
-                        } catch (e) {
-                          debugPrint('Error updating delivery time: $e');
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Failed updating delivery time'),
-                            ),
-                          );
-                        }
-                      },
-                      child: const Text('Print'),
+                    // QR Code
+                    const Text('Scan Order ID:',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: QrImageView(
+                        data: order.documentId,
+                        version: QrVersions.auto,
+                        size: 100,
+                      ),
                     ),
                   ],
                 ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
+              ),
+            ),
+            actions: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  const Text('Auto Print', style: TextStyle(fontSize: 14)),
+                  Switch(
+                    value: isAutoPrintOn,
+                    onChanged: (val) {
+                      setState(() {
+                        isAutoPrintOn = val;
+                      });
+                    },
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Close'),
+                  ),
+                  // Disable Print button if order is not pending
+                  ElevatedButton(
+                    onPressed: isPending
+                        ? () async {
+                            final mins =
+                                int.tryParse(deliveryController.text) ?? 60;
+                            // Calculate final delivery time from NOW
+                            final newDeliveryTime =
+                                DateTime.now().add(Duration(minutes: mins));
+
+                            try {
+                              // Update Firestore with the new delivery time
+                              await FirebaseFirestore.instance
+                                  .collection('BillOrder')
+                                  .doc(order.documentId)
+                                  .update({
+                                'delivery_time': newDeliveryTime,
+                              });
+
+                              // Build the custom PDF for printing (2-inch wide)
+                              final pdfBytes =
+                                  await _buildPdf(order, newDeliveryTime);
+
+                              if (isAutoPrintOn) {
+                                // Let user pick a printer, then direct print
+                                final printer =
+                                    await Printing.pickPrinter(
+                                        context: context);
+                                if (printer == null) return; // user canceled
+                                await Printing.directPrintPdf(
+                                  printer: printer,
+                                  name: 'Order_${order.documentId}',
+                                  format: PdfPageFormat(
+                                    2 * PdfPageFormat.inch,
+                                    700, // same as in _buildPdf
+                                    marginAll: 5,
+                                  ),
+                                  onLayout: (PdfPageFormat format) async =>
+                                      pdfBytes,
+                                );
+                              } else {
+                                // Show the print preview => user can also save as PDF
+                                await Printing.layoutPdf(
+                                  name: 'Order_${order.documentId}',
+                                  format: PdfPageFormat(
+                                    2 * PdfPageFormat.inch,
+                                    700,
+                                    marginAll: 5,
+                                  ),
+                                  onLayout: (PdfPageFormat format) async =>
+                                      pdfBytes,
+                                );
+                              }
+
+                              Navigator.of(context).pop();
+                            } catch (e) {
+                              debugPrint('Error updating delivery time: $e');
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content:
+                                      Text('Failed updating delivery time'),
+                                ),
+                              );
+                            }
+                          }
+                        : null,
+                    child: const Text('Print'),
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
 
   /// Build the list of orders (left column).
   Widget _buildOrdersList() {
@@ -634,7 +668,7 @@ class _BillOrdersWidgetState extends State<BillOrdersWidget> {
         order.status.toLowerCase() == 'order new') {
       return ElevatedButton(
         onPressed: () => _acceptOrder(order),
-        style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+        style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white,),
         child: const Text('Accept'),
       );
     }
